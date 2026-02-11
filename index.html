@@ -239,7 +239,7 @@
   <div class="app">
     <h1>Med Study Sheet Generator</h1>
     <p class="subtitle">
-      Upload your notes, have key terms removed, then drag words/numbers back into place. Custom mode lets you pick the exact blanks.
+      Upload your notes, have medical/anatomy/biology terms removed, then drag words/numbers back into place. Custom mode lets you pick exact blanks.
     </p>
 
     <div class="controls">
@@ -247,11 +247,11 @@
       <label>
         <span class="difficulty-label">Difficulty:</span>
         <select id="difficultySelect">
-          <option value="very_easy">Very Easy (few terms, no numbers)</option>
-          <option value="easy">Easy (more terms, no numbers)</option>
-          <option value="medium" selected>Medium (terms + some numbers)</option>
+          <option value="very_easy">Very Easy (few terms)</option>
+          <option value="easy">Easy (more terms)</option>
+          <option value="medium" selected>Medium (lots of terms + some numbers)</option>
           <option value="hard">Hard (most terms + numbers)</option>
-          <option value="insane">Insane (almost everything removed)</option>
+          <option value="insane">Insane (almost everything scientific)</option>
           <option value="custom">Custom (you choose terms)</option>
         </select>
       </label>
@@ -264,12 +264,11 @@
         <div class="page-wrapper">
           <div id="pageContainer" class="page-container">
             <img id="pageImage" alt="Uploaded sheet will appear here">
-            <!-- Blank zones get injected here -->
           </div>
         </div>
         <p class="hint">
           • Drag words from the word bank onto the blanks. Green = correct, red = incorrect.<br>
-          • Higher difficulties remove more terms and numbers. Custom lets you pick exactly which ones.
+          • Higher difficulties remove more medical/anatomy/biology terms and numbers. Custom lets you pick exactly which ones.
         </p>
 
         <div id="customPanel" class="custom-panel" style="display:none;">
@@ -277,9 +276,7 @@
           <p style="margin-top:0;">
             Check the terms you want turned into blanks, then tap <strong>Apply custom blanks</strong>.
           </p>
-          <div id="customList" class="custom-list">
-            <!-- Checkbox list of terms goes here -->
-          </div>
+          <div id="customList" class="custom-list"></div>
           <button id="applyCustomBtn">Apply custom blanks</button>
         </div>
       </div>
@@ -291,7 +288,7 @@
           <em>No sheet processed yet.</em>
         </div>
         <p class="small-note">
-          Note: OCR may miss some words or mis-read them. This is a study helper, not a perfect grader.
+          OCR isn’t perfect – it may miss or mis-read some terms. This is a study helper, not a grading system.
         </p>
       </aside>
     </div>
@@ -322,17 +319,15 @@
 
     let img = new Image();
     let imgDataUrl = null;
-
-    // For custom mode: term map from normalized term -> { display, isNumber, occurrences: [{bbox}] }
     let customTermMap = null;
 
+    // More aggressive difficulty settings
     const DIFFICULTY_CONFIG = {
-      very_easy: { proportion: 0.25, includeNumbers: false },
-      easy:      { proportion: 0.4,  includeNumbers: false },
-      medium:    { proportion: 0.6,  includeNumbers: true  },
-      hard:      { proportion: 0.8,  includeNumbers: true  },
+      very_easy: { proportion: 0.35, includeNumbers: false },
+      easy:      { proportion: 0.55, includeNumbers: false },
+      medium:    { proportion: 0.75, includeNumbers: true  },
+      hard:      { proportion: 0.9,  includeNumbers: true  },
       insane:    { proportion: 1.0,  includeNumbers: true  }
-      // custom handled separately
     };
 
     const CHANGE_WORDS = new Set([
@@ -351,6 +346,7 @@
     ]);
 
     const MEDICAL_TERMS = new Set([
+      // (same as before – anatomy & medical core)
       "artery","arteries","vein","veins","capillary","capillaries","arteriole","venule",
       "heart","atria","atrium","ventricle","ventricles","aorta","pulmonary",
       "cardiac","myocardium","endocardium","pericardium",
@@ -396,14 +392,41 @@
       "bronchodilator","diuretic","sedative","anesthetic"
     ]);
 
+    // New: broader biology/science vocabulary
+    const BIOLOGY_TERMS = new Set([
+      "cell","cells","tissue","tissues","organ","organs","organism","organisms",
+      "homeostasis","metabolism","metabolic","anabolism","catabolism",
+      "protein","proteins","peptide","peptides","amino","aminoacid","aminoacids",
+      "enzyme","enzymes","substrate","substrates","product","products",
+      "dna","rna","mrna","trna","rrna","chromosome","chromosomes","gene","genes",
+      "genome","genetic","heredity","allele","alleles",
+      "mitosis","meiosis","replication","transcription","translation",
+      "receptor","receptors","ligand","ligands","signal","signaling",
+      "diffusion","osmosis","gradient","membrane","membranes","phospholipid","phospholipids",
+      "cytoplasm","cytosol","nucleus","nuclei","nucleolus","organelle","organelles",
+      "mitochondrion","mitochondria","ribosome","ribosomes","golgi","lysosome","lysosomes","peroxisome","peroxisomes",
+      "epithelium","epithelial","connective","connective tissue","smooth","skeletal","cardiac muscle",
+      "respiration","aerobic","anaerobic","glycolysis","krebs","citric acid cycle","electron transport",
+      "phagocytosis","endocytosis","exocytosis",
+      "pathogen","pathogens","bacteria","bacterium","virus","viruses","fungus","fungi","parasite","parasites"
+    ]);
+
     const STEMS = [
       "cardio","neuro","hepat","nephro","pulmon","gastro","derm","dermo",
-      "osteo","myo","encephal","angi","phleb","arthr","cranio","hemo","hema","pharm","onc","uro","pneumo"
+      "osteo","myo","encephal","angi","phleb","arthr","cranio","hemo","hema","pharm","onc","uro","pneumo",
+      "cyto","cyte","hist","myelo","neuro","glia","erythr","leuk","thromb","lymph","oste","chondro","myelin",
+      "physio","anatom","bio","immune","endocr","hemat","glyco"
     ];
 
     const MEDICATION_SUFFIXES = [
       "olol","pril","sartan","dipine","statin","cillin","cycline","mycin","micin",
       "floxacin","azole","prazole","caine","mab","nib","tidine","sone","sonide","solone","dine","dopa","pramide"
+    ];
+
+    // New: common pathology/biology suffixes
+    const BIO_SUFFIXES = [
+      "itis","osis","emia","uria","lysis","lytic","philia","philic","phobic","phobia",
+      "plasia","trophy","genic","genesis","oma","opathy","ology","logy"
     ];
 
     const COMMON_MEDICATIONS = new Set([
@@ -422,6 +445,12 @@
       "diphenhydramine","loratadine","cetirizine"
     ]);
 
+    const STOP_WORDS = new Set([
+      "the","and","or","but","a","an","of","in","on","at","to","for","from","with","by","as",
+      "is","are","was","were","be","being","been","that","this","those","these","it","its",
+      "into","over","under","within","between","through","their","there","then","than"
+    ]);
+
     function normalizeWord(text) {
       return text
         .toLowerCase()
@@ -432,26 +461,45 @@
       if (!text) return false;
       const trimmed = text.trim();
       if (!trimmed) return false;
-      // digits, /, ., %, +, -
-      return /^[0-9][0-9./:%+-]*$/.test(trimmed);
+      // digits, /, ., %, +, -, and simple letters like Na, K, Ca
+      return /^([0-9][0-9./:%+-]*|[A-Za-z]{1,3}[0-9+\-]*)$/.test(trimmed);
     }
 
-    function isMedicalOrChangeWord(text) {
+    function isMedicalOrBioWord(text) {
       if (!text) return false;
       const clean = normalizeWord(text);
       if (!clean) return false;
 
+      // Skip common grammar words
+      if (STOP_WORDS.has(clean)) return false;
+
+      // Direct sets
       if (CHANGE_WORDS.has(clean)) return true;
       if (MEDICAL_TERMS.has(clean)) return true;
+      if (BIOLOGY_TERMS.has(clean)) return true;
       if (COMMON_MEDICATIONS.has(clean)) return true;
 
+      // Prefix stems
       for (const stem of STEMS) {
         if (clean.startsWith(stem) || clean.endsWith(stem)) return true;
       }
 
+      // Medical/biology suffixes
       if (clean.length >= 5) {
         for (const suf of MEDICATION_SUFFIXES) {
           if (clean.endsWith(suf)) return true;
+        }
+        for (const suf of BIO_SUFFIXES) {
+          if (clean.endsWith(suf)) return true;
+        }
+      }
+
+      // Aggressive fallback: long-ish sciencey-looking words
+      if (clean.length >= 8) {
+        const vowels = clean.match(/[aeiou]/g) || [];
+        const consonants = clean.match(/[^aeiou]/g) || [];
+        if (consonants.length >= 4) {
+          return true;
         }
       }
 
@@ -609,7 +657,7 @@
     processBtn.addEventListener("click", async () => {
       if (!imgDataUrl) return;
 
-      setStatus("Running OCR and selecting words/numbers based on difficulty…");
+      setStatus("Running OCR and selecting medical/anatomy/biology words…");
       processBtn.disabled = true;
       clearBlankZones();
       updateWordBank([]);
@@ -632,7 +680,7 @@
           const rawText = w.text || "";
           if (!rawText.trim()) return;
 
-          if (isMedicalOrChangeWord(rawText)) {
+          if (isMedicalOrBioWord(rawText)) {
             const { x0, y0, x1, y1 } = w.bbox;
             medicalCandidates.push({ text: rawText, bbox: { x0, y0, x1, y1 } });
           } else if (isNumberWord(rawText)) {
@@ -642,7 +690,7 @@
         });
 
         if (medicalCandidates.length === 0 && numberCandidates.length === 0) {
-          setStatus("No medical/change words or numbers were confidently detected.", true);
+          setStatus("No medical/anatomy/biology terms or numbers were confidently detected.", true);
           updateWordBank([]);
           processBtn.disabled = false;
           return;
@@ -656,7 +704,7 @@
 
           const addToMap = (candidate, isNumber) => {
             const norm = normalizeWord(candidate.text);
-            const key = norm || candidate.text.trim(); // for numbers keep original if normalize empties
+            const key = norm || candidate.text.trim();
             if (!key) return;
             if (!termMap.has(key)) {
               termMap.set(key, {
@@ -677,7 +725,6 @@
             return;
           }
 
-          // Render list
           customList.innerHTML = "";
           termMap.forEach((value, key) => {
             const row = document.createElement("div");
@@ -708,7 +755,7 @@
           return;
         }
 
-        // Non-custom modes: automatic selection
+        // Non-custom modes
         const config = DIFFICULTY_CONFIG[diffKey] || DIFFICULTY_CONFIG.medium;
         let allCandidates = medicalCandidates.slice();
         if (config.includeNumbers) {
@@ -716,7 +763,7 @@
         }
 
         if (allCandidates.length === 0) {
-          setStatus("No candidates found for this difficulty (try easier or different image).", true);
+          setStatus("No candidates found for this difficulty (try a different image).", true);
           processBtn.disabled = false;
           return;
         }
